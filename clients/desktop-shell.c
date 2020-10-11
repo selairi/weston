@@ -386,28 +386,51 @@ panel_clock_redraw_handler(struct widget *widget, void *data)
 	cairo_t *cr;
 	struct rectangle allocation;
 	cairo_text_extents_t extents;
+	cairo_text_extents_t extents2;
 	time_t rawtime;
 	struct tm * timeinfo;
 	char string[128];
+	char string_buffer[256];
 
 	time(&rawtime);
 	timeinfo = localtime(&rawtime);
 	strftime(string, sizeof string, clock->format_string, timeinfo);
+
+	{
+		// Battery Capacity
+		string_buffer[0] = '\0';
+		FILE *battery_capacity_file = fopen("/sys/class/power_supply/BAT0/capacity", "r");
+		if(battery_capacity_file != NULL) {
+
+			char capacity[16];
+			fscanf(battery_capacity_file, "%s", capacity);
+			fclose(battery_capacity_file);
+			snprintf(string_buffer, sizeof(string_buffer), "⚡%s%%", capacity);
+		}
+	}
 
 	widget_get_allocation(widget, &allocation);
 	if (allocation.width == 0)
 		return;
 
 	cr = widget_cairo_create(clock->panel->widget);
-	cairo_set_font_size(cr, 14);
+	cairo_set_font_size(cr, 10);
 	cairo_text_extents(cr, string, &extents);
+	cairo_text_extents(cr, string_buffer, &extents2);
 	if (allocation.x > 0)
 		allocation.x +=
 			allocation.width - DEFAULT_SPACING * 1.5 - extents.width;
 	else
 		allocation.x +=
 			allocation.width / 2 - extents.width / 2;
-	allocation.y += allocation.height / 2 - 1 + extents.height / 2;
+	allocation.y += allocation.height / 2 - 6 + (extents.height + extents2.height) / 2;
+	cairo_move_to(cr, allocation.x + 1, allocation.y + 1);
+	cairo_set_source_rgba(cr, 0, 0, 0, 0.85);
+	cairo_show_text(cr, string_buffer);
+	cairo_move_to(cr, allocation.x, allocation.y);
+	cairo_set_source_rgba(cr, 1, 1, 1, 0.85);
+	cairo_show_text(cr, string_buffer);
+	allocation.y += extents2.height + 2;
 	cairo_move_to(cr, allocation.x + 1, allocation.y + 1);
 	cairo_set_source_rgba(cr, 0, 0, 0, 0.85);
 	cairo_show_text(cr, string);
@@ -450,7 +473,7 @@ panel_add_clock(struct panel *panel)
 
 	switch (panel->clock_format) {
 	case CLOCK_FORMAT_MINUTES:
-		clock->format_string = "%a %b %d, %I:%M %p";
+		clock->format_string = "%H:%M";
 		clock->refresh_timer = 60;
 		break;
 	case CLOCK_FORMAT_SECONDS:
@@ -496,7 +519,7 @@ panel_resize_handler(struct widget *widget,
 	if (panel->clock_format == CLOCK_FORMAT_SECONDS)
 		w = 170;
 	else /* CLOCK_FORMAT_MINUTES */
-		w = 150;
+		w = 32;
 
 	if (horizontal)
 		x = width - w;
@@ -533,7 +556,7 @@ panel_configure(void *data,
 	switch (desktop->panel_position) {
 	case WESTON_DESKTOP_SHELL_PANEL_POSITION_TOP:
 	case WESTON_DESKTOP_SHELL_PANEL_POSITION_BOTTOM:
-		height = 32;
+		height = 16;
 		break;
 	case WESTON_DESKTOP_SHELL_PANEL_POSITION_LEFT:
 	case WESTON_DESKTOP_SHELL_PANEL_POSITION_RIGHT:
@@ -542,10 +565,10 @@ panel_configure(void *data,
 			width = 32;
 			break;
 		case CLOCK_FORMAT_MINUTES:
-			width = 150;
+			width = 32;
 			break;
 		case CLOCK_FORMAT_SECONDS:
-			width = 170;
+			width = 32;
 			break;
 		}
 		break;
