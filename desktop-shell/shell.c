@@ -4474,6 +4474,7 @@ bind_desktop_shell(struct wl_client *client,
 struct switcher {
 	struct desktop_shell *shell;
 	struct weston_view *current;
+	struct weston_view *next;
 	struct wl_listener listener;
 	struct weston_keyboard_grab grab;
 	struct wl_array minimized_array;
@@ -4497,25 +4498,53 @@ switcher_next(struct switcher *switcher)
 		*minimized = view;
 	}
 
+	/* Init switcher */
+	if (switcher->next == NULL) {
+		wl_list_for_each(view, &ws->layer.view_list.link, layer_link.link) {
+			shsurf = get_shell_surface(view->surface);
+			if (shsurf) {
+				if (first == NULL)
+					first = view;
+				if (prev == switcher->current)
+					next = view;
+				prev = view;
+				view->alpha = 0.25;
+				weston_view_geometry_dirty(view);
+				weston_surface_damage(view->surface);
+			}
+		}
+
+		if (next == NULL)
+			next = first;
+
+		if (next == NULL)
+			return;
+
+		switcher->next = next;
+
+		first = prev = next = NULL;
+	}
+
 	wl_list_for_each(view, &ws->layer.view_list.link, layer_link.link) {
 		shsurf = get_shell_surface(view->surface);
 		if (shsurf) {
 			if (first == NULL)
 				first = view;
-			if (prev == switcher->current)
+			if (prev == switcher->next)
 				next = view;
 			prev = view;
-			view->alpha = 0.25;
-			weston_view_geometry_dirty(view);
-			weston_surface_damage(view->surface);
+			//view->alpha = 0.25;
+			//weston_view_geometry_dirty(view);
+			//weston_surface_damage(view->surface);
 		}
 
 		if (is_black_surface_view(view, NULL)) {
-			view->alpha = 0.25;
-			weston_view_geometry_dirty(view);
-			weston_surface_damage(view->surface);
+			//view->alpha = 0.25;
+			//weston_view_geometry_dirty(view);
+			//weston_surface_damage(view->surface);
 		}
 	}
+
 
 	if (next == NULL)
 		next = first;
@@ -4526,13 +4555,24 @@ switcher_next(struct switcher *switcher)
 	wl_list_remove(&switcher->listener.link);
 	wl_signal_add(&next->destroy_signal, &switcher->listener);
 
-	switcher->current = next;
-	wl_list_for_each(view, &next->surface->views, surface_link)
+	switcher->current = switcher->next;
+	switcher->next = next;
+	wl_list_for_each(view, &next->surface->views, surface_link) {
 		view->alpha = 1.0;
+		//weston_view_geometry_dirty(view);
+		//weston_surface_damage(view->surface);
+	}
 
+	{
+		// Activate current
+		struct weston_keyboard *keyboard = switcher->grab.keyboard;
+		activate(switcher->shell, switcher->current, keyboard->seat,
+			WESTON_ACTIVATE_FLAG_CONFIGURE);
+	}
 	shsurf = get_shell_surface(switcher->current->surface);
-	if (shsurf && weston_desktop_surface_get_fullscreen(shsurf->desktop_surface))
-		shsurf->fullscreen.black_view->alpha = 1.0;
+	if (shsurf && weston_desktop_surface_get_fullscreen(shsurf->desktop_surface)) {
+		//shsurf->fullscreen.black_view->alpha = 1.0;
+	}
 }
 
 static void
@@ -4632,9 +4672,10 @@ switcher_binding(struct weston_keyboard *keyboard, const struct timespec *time,
 	switcher = malloc(sizeof *switcher);
 	if (!switcher)
 		return;
-	
+
 	switcher->shell = shell;
 	switcher->current = NULL;
+	switcher->next = NULL;
 	switcher->listener.notify = switcher_handle_view_destroy;
 	wl_list_init(&switcher->listener.link);
 	wl_array_init(&switcher->minimized_array);
